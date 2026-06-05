@@ -10,113 +10,95 @@ async function handleAntiSpamMessage(message, db) {
   const guildId = message.guild.id;
   const channelId = message.channel.id;
 
-  db.get(
-    `
-    SELECT * FROM anti_spam_channels
-    WHERE guild_id = ? AND channel_id = ? AND is_active = 1
-    `,
-    [guildId, channelId],
-    async (err, config) => {
-      if (err) {
-        console.error(err);
-        return;
-      }
+  try {
+    const config = db
+      .prepare(`
+        SELECT * FROM anti_spam_channels
+        WHERE guild_id = ? AND channel_id = ? AND is_active = 1
+      `)
+      .get(guildId, channelId);
 
-      if (!config) return;
+    if (!config) return;
 
-      try {
-        await message.delete().catch(() => null);
+    await message.delete().catch(() => null);
 
-        const member = message.member;
-        const botMember = message.guild.members.me;
+    const member = message.member;
+    const botMember = message.guild.members.me;
 
-        if (!member || !botMember) return;
+    if (!member || !botMember) return;
 
-        if (config.action === "ban") {
-          if (
-            botMember.permissions.has(PermissionFlagsBits.BanMembers) &&
-            member.bannable
-          ) {
-            await member.ban({
-              reason: "Mengirim pesan di channel anti spam/phishing",
-            });
-          }
-        }
-
-        if (config.action === "kick") {
-          if (
-            botMember.permissions.has(PermissionFlagsBits.KickMembers) &&
-            member.kickable
-          ) {
-            await member.kick("Mengirim pesan di channel anti spam/phishing");
-          }
-        }
-
-        if (config.action === "timeout") {
-          if (
-            botMember.permissions.has(PermissionFlagsBits.ModerateMembers) &&
-            member.moderatable
-          ) {
-            await member.timeout(
-              timeoutDuration,
-              "Mengirim pesan di channel anti spam/phishing"
-            );
-          }
-        }
-
-        db.run(
-          `
-          UPDATE anti_spam_channels
-          SET action_count = action_count + 1,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE guild_id = ?
-          `,
-          [guildId],
-          (updateErr) => {
-            if (updateErr) {
-              console.error(updateErr);
-              return;
-            }
-
-            updateWarningMessage(message, db);
-          }
-        );
-      } catch (error) {
-        console.error("Anti spam detector error:", error);
+    if (config.action === "ban") {
+      if (
+        botMember.permissions.has(PermissionFlagsBits.BanMembers) &&
+        member.bannable
+      ) {
+        await member.ban({
+          reason: "Mengirim pesan di channel anti spam/phishing",
+        });
       }
     }
-  );
+
+    if (config.action === "kick") {
+      if (
+        botMember.permissions.has(PermissionFlagsBits.KickMembers) &&
+        member.kickable
+      ) {
+        await member.kick("Mengirim pesan di channel anti spam/phishing");
+      }
+    }
+
+    if (config.action === "timeout") {
+      if (
+        botMember.permissions.has(PermissionFlagsBits.ModerateMembers) &&
+        member.moderatable
+      ) {
+        await member.timeout(
+          timeoutDuration,
+          "Mengirim pesan di channel anti spam/phishing"
+        );
+      }
+    }
+
+    db.prepare(`
+      UPDATE anti_spam_channels
+      SET action_count = action_count + 1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE guild_id = ?
+    `).run(guildId);
+
+    await updateWarningMessage(message, db);
+  } catch (error) {
+    console.error("Anti spam detector error:", error);
+  }
 }
 
-function updateWarningMessage(message, db) {
-  db.get(
-    `
-    SELECT * FROM anti_spam_channels
-    WHERE guild_id = ?
-    `,
-    [message.guild.id],
-    async (err, config) => {
-      if (err || !config) return;
+async function updateWarningMessage(message, db) {
+  try {
+    const config = db
+      .prepare(`
+        SELECT * FROM anti_spam_channels
+        WHERE guild_id = ?
+      `)
+      .get(message.guild.id);
 
-      try {
-        const channel = await message.guild.channels.fetch(config.channel_id);
+    if (!config) return;
 
-        if (!channel) return;
+    const channel = await message.guild.channels.fetch(config.channel_id);
 
-        const warningMessage = await channel.messages.fetch(
-          config.warning_message_id
-        );
+    if (!channel) return;
 
-        if (!warningMessage) return;
+    const warningMessage = await channel.messages.fetch(
+      config.warning_message_id
+    );
 
-        await warningMessage.edit({
-            embeds: [getWarningEmbed(config.action_count, config.action)],
-          });
-      } catch (error) {
-        console.error("Gagal update warning message:", error);
-      }
-    }
-  );
+    if (!warningMessage) return;
+
+    await warningMessage.edit({
+      embeds: [getWarningEmbed(config.action_count, config.action)],
+    });
+  } catch (error) {
+    console.error("Gagal update warning message:", error);
+  }
 }
 
 module.exports = {

@@ -83,99 +83,89 @@ const {
           embeds: [getWarningEmbed(0, action)],
         });
   
-        db.run(
-          `
-          INSERT INTO anti_spam_channels 
-          (guild_id, channel_id, warning_message_id, action, action_count, is_active, updated_at)
-          VALUES (?, ?, ?, ?, 0, 1, CURRENT_TIMESTAMP)
-          ON CONFLICT(guild_id) DO UPDATE SET
-            channel_id = excluded.channel_id,
-            warning_message_id = excluded.warning_message_id,
-            action = excluded.action,
-            action_count = 0,
-            is_active = 1,
-            updated_at = CURRENT_TIMESTAMP
-          `,
-          [guildId, channel.id, warningMessage.id, action],
-          (err) => {
-            if (err) {
-              console.error(err);
+        try {
+          db.prepare(`
+            INSERT INTO anti_spam_channels 
+            (guild_id, channel_id, warning_message_id, action, action_count, is_active, updated_at)
+            VALUES (?, ?, ?, ?, 0, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(guild_id) DO UPDATE SET
+              channel_id = excluded.channel_id,
+              warning_message_id = excluded.warning_message_id,
+              action = excluded.action,
+              action_count = 0,
+              is_active = 1,
+              updated_at = CURRENT_TIMESTAMP
+          `).run(guildId, channel.id, warningMessage.id, action);
   
-              return interaction.reply({
-                content: "❌ Gagal menyimpan konfigurasi anti spam.",
-                ephemeral: true,
-              });
-            }
+          return interaction.reply({
+            content: `✅ Anti spam/phishing berhasil diaktifkan di ${channel} dengan aksi **${action}**.`,
+            ephemeral: true,
+          });
+        } catch (error) {
+          console.error(error);
   
-            return interaction.reply({
-              content: `✅ Anti spam/phishing berhasil diaktifkan di ${channel} dengan aksi **${action}**.`,
-              ephemeral: true,
-            });
-          }
-        );
+          return interaction.reply({
+            content: "❌ Gagal menyimpan konfigurasi anti spam.",
+            ephemeral: true,
+          });
+        }
       }
   
       if (subcommand === "off") {
-        db.run(
-          `
-          UPDATE anti_spam_channels
-          SET is_active = 0, updated_at = CURRENT_TIMESTAMP
-          WHERE guild_id = ?
-          `,
-          [guildId],
-          (err) => {
-            if (err) {
-              console.error(err);
+        try {
+          db.prepare(`
+            UPDATE anti_spam_channels
+            SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+            WHERE guild_id = ?
+          `).run(guildId);
   
-              return interaction.reply({
-                content: "❌ Gagal menonaktifkan anti spam.",
-                ephemeral: true,
-              });
-            }
+          return interaction.reply({
+            content: "✅ Fitur anti spam/phishing sudah dinonaktifkan untuk server ini.",
+            ephemeral: true,
+          });
+        } catch (error) {
+          console.error(error);
   
-            return interaction.reply({
-              content: "✅ Fitur anti spam/phishing sudah dinonaktifkan untuk server ini.",
-              ephemeral: true,
-            });
-          }
-        );
+          return interaction.reply({
+            content: "❌ Gagal menonaktifkan anti spam.",
+            ephemeral: true,
+          });
+        }
       }
   
       if (subcommand === "status") {
-        db.get(
-          `
-          SELECT * FROM anti_spam_channels
-          WHERE guild_id = ?
-          `,
-          [guildId],
-          (err, config) => {
-            if (err) {
-              console.error(err);
+        try {
+          const config = db
+            .prepare(`
+              SELECT * FROM anti_spam_channels
+              WHERE guild_id = ?
+            `)
+            .get(guildId);
   
-              return interaction.reply({
-                content: "❌ Gagal mengambil status anti spam.",
-                ephemeral: true,
-              });
-            }
-  
-            if (!config || config.is_active === 0) {
-              return interaction.reply({
-                content: "ℹ️ Anti spam/phishing belum aktif di server ini.",
-                ephemeral: true,
-              });
-            }
-  
+          if (!config || config.is_active === 0) {
             return interaction.reply({
-              content: [
-                "✅ **Anti Spam/Phishing Aktif**",
-                `Channel: <#${config.channel_id}>`,
-                `Action: **${config.action}**`,
-                `Action Count: **${config.action_count} Users**`,
-              ].join("\n"),
+              content: "ℹ️ Anti spam/phishing belum aktif di server ini.",
               ephemeral: true,
             });
           }
-        );
+  
+          return interaction.reply({
+            content: [
+              "✅ **Anti Spam/Phishing Aktif**",
+              `Channel: <#${config.channel_id}>`,
+              `Action: **${config.action}**`,
+              `Action Count: **${config.action_count} Users**`,
+            ].join("\n"),
+            ephemeral: true,
+          });
+        } catch (error) {
+          console.error(error);
+  
+          return interaction.reply({
+            content: "❌ Gagal mengambil status anti spam.",
+            ephemeral: true,
+          });
+        }
       }
     },
   
