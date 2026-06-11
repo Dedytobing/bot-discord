@@ -44,15 +44,22 @@ async function pushToApi(type, payload) {
   }
 }
 
+function getGuildIconUrl(guild) {
+  return (
+    guild?.iconURL({
+      size: 256,
+      extension: "png",
+      forceStatic: false,
+    }) || null
+  );
+}
+
 function formatGuild(guild) {
   return {
     guild_id: guild.id,
     guild_name: guild.name,
-    icon_url: guild.iconURL({
-      size: 256,
-      extension: "png",
-      forceStatic: false,
-    }),
+    icon_url: getGuildIconUrl(guild),
+    guild_icon_url: getGuildIconUrl(guild),
     member_count: guild.memberCount,
   };
 }
@@ -102,6 +109,7 @@ function formatVoiceState(voiceState) {
   return {
     guild_id: voiceState.guild.id,
     guild_name: voiceState.guild.name,
+    guild_icon_url: getGuildIconUrl(voiceState.guild),
     user_id: member?.user?.id || voiceState.id,
     username: member?.user?.username || null,
     global_name: member?.user?.globalName || null,
@@ -131,6 +139,7 @@ function formatVoiceChannel(channel) {
   return {
     guild_id: channel.guild.id,
     guild_name: channel.guild.name,
+    guild_icon_url: getGuildIconUrl(channel.guild),
     channel_id: channel.id,
     channel_name: channel.name,
     channel_type: channel.type,
@@ -160,6 +169,7 @@ async function getGuildVoiceSnapshot(guild) {
   return {
     guild_id: guild.id,
     guild_name: guild.name,
+    guild_icon_url: getGuildIconUrl(guild),
     voice_states,
     voice_channels,
   };
@@ -223,4 +233,5 @@ module.exports = {
   formatRole,
   formatVoiceState,
   formatVoiceChannel,
+  getGuildIconUrl,
 };
