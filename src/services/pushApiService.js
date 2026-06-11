@@ -48,7 +48,11 @@ function formatGuild(guild) {
   return {
     guild_id: guild.id,
     guild_name: guild.name,
-    icon_url: guild.iconURL({ size: 256 }),
+    icon_url: guild.iconURL({
+      size: 256,
+      extension: "png",
+      forceStatic: false,
+    }),
     member_count: guild.memberCount,
   };
 }
@@ -102,6 +106,12 @@ function formatVoiceState(voiceState) {
     username: member?.user?.username || null,
     global_name: member?.user?.globalName || null,
     display_name: member?.displayName || null,
+    avatar_url:
+      member?.user?.displayAvatarURL({
+        size: 256,
+        extension: "png",
+        forceStatic: false,
+      }) || null,
     channel_id: voiceState.channelId,
     channel_name: voiceState.channel?.name || null,
     self_mute: voiceState.selfMute,
@@ -112,7 +122,6 @@ function formatVoiceState(voiceState) {
     camera: voiceState.selfVideo,
   };
 }
-
 async function pushGuildSnapshot(guild) {
   try {
     await guild.members.fetch().catch((error) => {
