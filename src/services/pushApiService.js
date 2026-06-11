@@ -112,6 +112,7 @@ function formatVoiceState(voiceState) {
         extension: "png",
         forceStatic: false,
       }) || null,
+    is_bot: member?.user?.bot ?? null,
     channel_id: voiceState.channelId,
     channel_name: voiceState.channel?.name || null,
     self_mute: voiceState.selfMute,
@@ -120,13 +121,72 @@ function formatVoiceState(voiceState) {
     server_deaf: voiceState.serverDeaf,
     streaming: voiceState.streaming,
     camera: voiceState.selfVideo,
+    session_id: voiceState.sessionId || null,
   };
 }
+
+function formatVoiceChannel(channel) {
+  const members = channel.members?.map((member) => formatVoiceState(member.voice)) || [];
+
+  return {
+    guild_id: channel.guild.id,
+    guild_name: channel.guild.name,
+    channel_id: channel.id,
+    channel_name: channel.name,
+    channel_type: channel.type,
+    parent_id: channel.parentId || null,
+    parent_name: channel.parent?.name || null,
+    position: channel.position,
+    user_limit: channel.userLimit || 0,
+    bitrate: channel.bitrate || null,
+    members_count: members.length,
+    members,
+  };
+}
+
+async function getGuildVoiceSnapshot(guild) {
+  // Memastikan cache channel voice terbaru sebelum dibaca.
+  await guild.channels.fetch().catch((error) => {
+    console.error(`[PUSH API] Gagal fetch channels guild ${guild.name}:`, error.message);
+  });
+
+  const voice_channels = guild.channels.cache
+    .filter((channel) => channel.isVoiceBased?.())
+    .map(formatVoiceChannel)
+    .sort((a, b) => a.position - b.position);
+
+  const voice_states = guild.voiceStates.cache.map(formatVoiceState);
+
+  return {
+    guild_id: guild.id,
+    guild_name: guild.name,
+    voice_states,
+    voice_channels,
+  };
+}
+
+async function pushVoiceSnapshot(guild, type = "voice_snapshot", extraPayload = {}) {
+  const snapshot = await getGuildVoiceSnapshot(guild);
+
+  await pushToApi(type, {
+    ...extraPayload,
+    ...snapshot,
+  });
+}
+
 async function pushGuildSnapshot(guild) {
   try {
     await guild.members.fetch().catch((error) => {
       console.error(
         `[PUSH API] Gagal fetch members guild ${guild.name}:`,
+        error.message
+      );
+      return null;
+    });
+
+    await guild.channels.fetch().catch((error) => {
+      console.error(
+        `[PUSH API] Gagal fetch channels guild ${guild.name}:`,
         error.message
       );
       return null;
@@ -138,13 +198,14 @@ async function pushGuildSnapshot(guild) {
       .filter((role) => role.id !== guild.id)
       .map(formatRole);
 
-    const voice_states = guild.voiceStates.cache.map(formatVoiceState);
+    const voiceSnapshot = await getGuildVoiceSnapshot(guild);
 
     await pushToApi("guild_snapshot", {
       guild: formatGuild(guild),
       members,
       roles,
-      voice_states,
+      voice_states: voiceSnapshot.voice_states,
+      voice_channels: voiceSnapshot.voice_channels,
     });
   } catch (error) {
     console.error(`[PUSH API] Gagal membuat guild_snapshot untuk ${guild.name}`);
@@ -155,8 +216,11 @@ async function pushGuildSnapshot(guild) {
 module.exports = {
   pushToApi,
   pushGuildSnapshot,
+  pushVoiceSnapshot,
+  getGuildVoiceSnapshot,
   formatGuild,
   formatMember,
   formatRole,
   formatVoiceState,
+  formatVoiceChannel,
 };

@@ -19,6 +19,8 @@ const {
   formatMember,
   formatRole,
   formatVoiceState,
+  getGuildVoiceSnapshot,
+  pushVoiceSnapshot,
 } = require("./services/pushApiService");
 
 const client = new Client({
@@ -40,6 +42,10 @@ client.once(Events.ClientReady, async () => {
 
   for (const guild of client.guilds.cache.values()) {
     await pushGuildSnapshot(guild);
+
+    // Kirim snapshot voice terpisah supaya endpoint voice langsung punya data lengkap
+    // walaupun user sudah berada di voice sebelum bot online.
+    await pushVoiceSnapshot(guild, "voice_snapshot");
   }
 
   const activities = [
@@ -239,13 +245,24 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       eventType = "voice_moved";
     }
 
+    const guild = newState.guild || oldState.guild;
+    const voiceSnapshot = await getGuildVoiceSnapshot(guild);
+
     await pushToApi(eventType, {
-      guild_id: newState.guild.id || oldState.guild.id,
-      guild_name: newState.guild.name || oldState.guild.name,
+      guild_id: guild.id,
+      guild_name: guild.name,
       user_id: newState.id || oldState.id,
       old_state: oldState.channelId ? formatVoiceState(oldState) : null,
       new_state: newState.channelId ? formatVoiceState(newState) : null,
+
+      // Data lengkap kondisi voice saat ini.
+      // Backend sebaiknya replace data voice guild berdasarkan field ini, bukan hanya merge 1 user.
+      voice_states: voiceSnapshot.voice_states,
+      voice_channels: voiceSnapshot.voice_channels,
     });
+
+    // Event tambahan khusus snapshot agar endpoint /api/discord/voice selalu sinkron.
+    await pushToApi("voice_snapshot", voiceSnapshot);
 
     const member = newState.member || oldState.member;
     const username = member?.user?.tag || newState.id || oldState.id;
