@@ -61,7 +61,11 @@ function formatMember(member) {
     username: member.user.username,
     global_name: member.user.globalName,
     display_name: member.displayName,
-    avatar_url: member.user.displayAvatarURL({ size: 256 }),
+    avatar_url: member.user.displayAvatarURL({
+      size: 256,
+      extension: "png",
+      forceStatic: false,
+    }),
     is_bot: member.user.bot,
     joined_at: member.joinedAt?.toISOString() || null,
     roles: member.roles.cache
