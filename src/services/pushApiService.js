@@ -103,8 +103,9 @@ function formatRole(role) {
   };
 }
 
-function formatVoiceState(voiceState) {
-  const member = voiceState.member;
+function formatVoiceState(voiceState, fallbackMember = null, fallbackChannel = null) {
+  const member = voiceState.member || fallbackMember || null;
+  const channel = voiceState.channel || fallbackChannel || null;
 
   return {
     guild_id: voiceState.guild.id,
@@ -113,7 +114,7 @@ function formatVoiceState(voiceState) {
     user_id: member?.user?.id || voiceState.id,
     username: member?.user?.username || null,
     global_name: member?.user?.globalName || null,
-    display_name: member?.displayName || null,
+    display_name: member?.displayName || member?.user?.globalName || member?.user?.username || null,
     avatar_url:
       member?.user?.displayAvatarURL({
         size: 256,
@@ -122,7 +123,7 @@ function formatVoiceState(voiceState) {
       }) || null,
     is_bot: member?.user?.bot ?? null,
     channel_id: voiceState.channelId,
-    channel_name: voiceState.channel?.name || null,
+    channel_name: channel?.name || null,
     self_mute: voiceState.selfMute,
     self_deaf: voiceState.selfDeaf,
     server_mute: voiceState.serverMute,
@@ -133,9 +134,26 @@ function formatVoiceState(voiceState) {
   };
 }
 
-function formatVoiceChannel(channel) {
-  const members = channel.members?.map((member) => formatVoiceState(member.voice)) || [];
+async function resolveVoiceMember(guild, userId) {
+  return (
+    guild.members.cache.get(userId) ||
+    (await guild.members.fetch(userId).catch(() => null))
+  );
+}
 
+async function buildActiveVoiceState(guild, voiceState) {
+  if (!voiceState?.channelId) return null;
+
+  const member = await resolveVoiceMember(guild, voiceState.id);
+  const channel =
+    voiceState.channel ||
+    guild.channels.cache.get(voiceState.channelId) ||
+    null;
+
+  return formatVoiceState(voiceState, member, channel);
+}
+
+function formatVoiceChannelFromStates(channel, members) {
   return {
     guild_id: channel.guild.id,
     guild_name: channel.guild.name,
@@ -153,18 +171,49 @@ function formatVoiceChannel(channel) {
   };
 }
 
+function formatVoiceChannel(channel) {
+  const members = channel.members?.map((member) => formatVoiceState(member.voice)) || [];
+
+  return formatVoiceChannelFromStates(channel, members);
+}
+
 async function getGuildVoiceSnapshot(guild) {
-  // Memastikan cache channel voice terbaru sebelum dibaca.
+  // Ambil channel terbaru agar nama channel/category tetap update.
   await guild.channels.fetch().catch((error) => {
     console.error(`[PUSH API] Gagal fetch channels guild ${guild.name}:`, error.message);
   });
 
-  const voice_channels = guild.channels.cache
-    .filter((channel) => channel.isVoiceBased?.())
-    .map(formatVoiceChannel)
-    .sort((a, b) => a.position - b.position);
+  // Jangan mengandalkan channel.members sebagai sumber utama,
+  // karena channel.members bergantung pada guild.members.cache dan bisa hanya berisi user yang baru trigger event.
+  // Sumber utama yang lebih tepat untuk kondisi voice saat ini adalah guild.voiceStates.cache.
+  const activeVoiceStates = guild.voiceStates.cache.filter((voiceState) => voiceState.channelId);
 
-  const voice_states = guild.voiceStates.cache.map(formatVoiceState);
+  const voice_states = (
+    await Promise.all(
+      activeVoiceStates.map((voiceState) => buildActiveVoiceState(guild, voiceState))
+    )
+  ).filter(Boolean);
+
+  const membersByChannelId = new Map();
+
+  for (const voiceState of voice_states) {
+    if (!membersByChannelId.has(voiceState.channel_id)) {
+      membersByChannelId.set(voiceState.channel_id, []);
+    }
+
+    membersByChannelId.get(voiceState.channel_id).push(voiceState);
+  }
+
+  const voice_channels = [...membersByChannelId.entries()]
+    .map(([channelId, members]) => {
+      const channel = guild.channels.cache.get(channelId);
+
+      if (!channel) return null;
+
+      return formatVoiceChannelFromStates(channel, members);
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.position - b.position);
 
   return {
     guild_id: guild.id,

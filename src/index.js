@@ -40,6 +40,9 @@ client.commands.set(antiSpamCommand.data.name, antiSpamCommand);
 client.once(Events.ClientReady, async () => {
   console.log(`Bot aktif sebagai ${client.user.tag}`);
 
+  // Beri waktu sebentar agar cache voice dari gateway selesai masuk setelah bot ready.
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+
   for (const guild of client.guilds.cache.values()) {
     await pushGuildSnapshot(guild);
 
@@ -131,6 +134,7 @@ client.on(Events.GuildCreate, async (guild) => {
     });
 
     await pushGuildSnapshot(guild);
+    await pushVoiceSnapshot(guild, "voice_snapshot");
   } catch (error) {
     console.error("Gagal push guild_joined:", error);
   }
